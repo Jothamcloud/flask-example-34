@@ -5,4 +5,4 @@ node_modules
 .env
 *.log
 *.pem
-new-stage-4.2024-07-21.pem
+new-stage-4.2024-07-21.private-key.pem
