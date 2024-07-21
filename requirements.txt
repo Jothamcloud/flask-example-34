@@ -1,0 +1,5 @@
+Flask
+Flask-SQLAlchemy
+Flask-Login
+python-dotenv
+# Any other dependencies your project needs
