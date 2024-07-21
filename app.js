@@ -1,29 +1,21 @@
 import dotenv from "dotenv";
-import { App } from "octokit";
+import { Octokit } from "@octokit/rest";
 import { createNodeMiddleware } from "@octokit/webhooks";
 import fs from "fs";
-import http from "http";  // Import the http module
+import http from "http";
 import { exec } from "child_process";
 
 dotenv.config();
 
-const appId = process.env.APP_ID;
-const webhookSecret = process.env.WEBHOOK_SECRET;
-const privateKeyPath = process.env.PRIVATE_KEY_PATH;
+const personalAccessToken = process.env.GITHUB_TOKEN;
 
-if (!appId || !webhookSecret || !privateKeyPath) {
-  console.error('Required environment variables (APP_ID, WEBHOOK_SECRET, PRIVATE_KEY_PATH) are not set');
+if (!personalAccessToken) {
+  console.error('GITHUB_TOKEN is not set in the environment');
   process.exit(1);
 }
 
-const privateKey = fs.readFileSync(privateKeyPath, "utf8");
-
-const app = new App({
-  appId: appId,
-  privateKey: privateKey,
-  webhooks: {
-    secret: webhookSecret
-  },
+const octokit = new Octokit({
+  auth: personalAccessToken,
 });
 
 // Define messages
@@ -47,28 +39,17 @@ async function deployContainer(owner, repo, prNumber) {
 }
 
 // Handle pull request opened event
-async function handlePullRequestOpened({ octokit, payload }) {
+async function handlePullRequestOpened({ payload }) {
   console.log(`Received a pull request event for #${payload.pull_request.number}`);
 
   try {
     const url = await deployContainer(payload.repository.name, payload.pull_request.number);
-    const installationId = payload.installation?.id; // Get the installation ID from the payload
 
-    if (!installationId) {
-      console.error('Installation ID is missing in the webhook payload');
-      return;
-    }
-
-    const installationOctokit = await app.getInstallationOctokit(installationId);
-
-    await installationOctokit.request("POST /repos/{owner}/{repo}/issues/{issue_number}/comments", {
+    await octokit.issues.createComment({
       owner: payload.repository.owner.login,
       repo: payload.repository.name,
       issue_number: payload.pull_request.number,
       body: `${welcomeMessage}\n${deploymentMessage(url)}`,
-      headers: {
-        "x-github-api-version": "2022-11-28",
-      },
     });
   } catch (error) {
     console.error(`Error posting comment: ${error}`);
@@ -76,27 +57,15 @@ async function handlePullRequestOpened({ octokit, payload }) {
 }
 
 // Handle pull request closed (merged) event
-async function handlePullRequestClosed({ octokit, payload }) {
+async function handlePullRequestClosed({ payload }) {
   console.log(`Received a pull request closed event for #${payload.pull_request.number}`);
 
   try {
-    const installationId = payload.installation?.id; // Get the installation ID from the payload
-
-    if (!installationId) {
-      console.error('Installation ID is missing in the webhook payload');
-      return;
-    }
-
-    const installationOctokit = await app.getInstallationOctokit(installationId);
-
-    await installationOctokit.request("POST /repos/{owner}/{repo}/issues/{issue_number}/comments", {
+    await octokit.issues.createComment({
       owner: payload.repository.owner.login,
       repo: payload.repository.name,
       issue_number: payload.pull_request.number,
       body: closeMessage,
-      headers: {
-        "x-github-api-version": "2022-11-28",
-      },
     });
   } catch (error) {
     console.error(`Error posting close comment: ${error}`);
@@ -104,11 +73,15 @@ async function handlePullRequestClosed({ octokit, payload }) {
 }
 
 // Set up webhook event listeners for pull request events
-app.webhooks.on("pull_request.opened", handlePullRequestOpened);
-app.webhooks.on("pull_request.closed", handlePullRequestClosed);
+const webhooks = new createNodeMiddleware({
+  secret: process.env.WEBHOOK_SECRET,
+});
+
+webhooks.on("pull_request.opened", handlePullRequestOpened);
+webhooks.on("pull_request.closed", handlePullRequestClosed);
 
 // Log any errors that occur
-app.webhooks.onError((error) => {
+webhooks.onError((error) => {
   if (error.name === "AggregateError") {
     console.error(`Error processing request: ${error.event}`);
   } else {
@@ -117,13 +90,13 @@ app.webhooks.onError((error) => {
 });
 
 // Define server details and webhook path
-const port = process.env.PORT || 3000; // Use environment variable or default to 3000
+const port = 3000;
 const host = '0.0.0.0';
 const path = "/api/webhook";
 const localWebhookUrl = `http://${host}:${port}${path}`;
 
 // Create middleware for handling webhook events
-const middleware = createNodeMiddleware(app.webhooks, { path });
+const middleware = createNodeMiddleware(webhooks, { path });
 
 // Create and start the HTTP server
 http.createServer(middleware).listen(port, () => {
