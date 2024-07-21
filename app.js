@@ -52,7 +52,10 @@ async function handlePullRequestOpened({ octokit, payload }) {
 
   try {
     const url = await deployContainer(payload.repository.name, payload.pull_request.number);
-    await octokit.request("POST /repos/{owner}/{repo}/issues/{issue_number}/comments", {
+    const installationId = payload.installation.id; // Get the installation ID from the payload
+    const installationOctokit = await app.getInstallationOctokit(installationId);
+
+    await installationOctokit.request("POST /repos/{owner}/{repo}/issues/{issue_number}/comments", {
       owner: payload.repository.owner.login,
       repo: payload.repository.name,
       issue_number: payload.pull_request.number,
@@ -71,7 +74,10 @@ async function handlePullRequestClosed({ octokit, payload }) {
   console.log(`Received a pull request closed event for #${payload.pull_request.number}`);
 
   try {
-    await octokit.request("POST /repos/{owner}/{repo}/issues/{issue_number}/comments", {
+    const installationId = payload.installation.id; // Get the installation ID from the payload
+    const installationOctokit = await app.getInstallationOctokit(installationId);
+
+    await installationOctokit.request("POST /repos/{owner}/{repo}/issues/{issue_number}/comments", {
       owner: payload.repository.owner.login,
       repo: payload.repository.name,
       issue_number: payload.pull_request.number,
