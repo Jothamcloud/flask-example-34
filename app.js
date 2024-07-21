@@ -2,7 +2,7 @@ import dotenv from "dotenv";
 import { App } from "octokit";
 import { createNodeMiddleware } from "@octokit/webhooks";
 import fs from "fs";
-import http from "http";  // Add this line to import the http module
+import http from "http";  // Import the http module
 import { exec } from "child_process";
 
 dotenv.config();
@@ -11,8 +11,8 @@ const appId = process.env.APP_ID;
 const webhookSecret = process.env.WEBHOOK_SECRET;
 const privateKeyPath = process.env.PRIVATE_KEY_PATH;
 
-if (!privateKeyPath) {
-  console.error('PRIVATE_KEY_PATH is not set in the environment');     
+if (!appId || !webhookSecret || !privateKeyPath) {
+  console.error('Required environment variables (APP_ID, WEBHOOK_SECRET, PRIVATE_KEY_PATH) are not set');
   process.exit(1);
 }
 
@@ -52,7 +52,13 @@ async function handlePullRequestOpened({ octokit, payload }) {
 
   try {
     const url = await deployContainer(payload.repository.name, payload.pull_request.number);
-    const installationId = payload.installation.id; // Get the installation ID from the payload
+    const installationId = payload.installation?.id; // Get the installation ID from the payload
+
+    if (!installationId) {
+      console.error('Installation ID is missing in the webhook payload');
+      return;
+    }
+
     const installationOctokit = await app.getInstallationOctokit(installationId);
 
     await installationOctokit.request("POST /repos/{owner}/{repo}/issues/{issue_number}/comments", {
@@ -74,7 +80,13 @@ async function handlePullRequestClosed({ octokit, payload }) {
   console.log(`Received a pull request closed event for #${payload.pull_request.number}`);
 
   try {
-    const installationId = payload.installation.id; // Get the installation ID from the payload
+    const installationId = payload.installation?.id; // Get the installation ID from the payload
+
+    if (!installationId) {
+      console.error('Installation ID is missing in the webhook payload');
+      return;
+    }
+
     const installationOctokit = await app.getInstallationOctokit(installationId);
 
     await installationOctokit.request("POST /repos/{owner}/{repo}/issues/{issue_number}/comments", {
@@ -105,7 +117,7 @@ app.webhooks.onError((error) => {
 });
 
 // Define server details and webhook path
-const port = 3000;
+const port = process.env.PORT || 3000; // Use environment variable or default to 3000
 const host = '0.0.0.0';
 const path = "/api/webhook";
 const localWebhookUrl = `http://${host}:${port}${path}`;
